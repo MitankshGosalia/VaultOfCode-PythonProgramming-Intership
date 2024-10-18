@@ -1,0 +1,160 @@
+import tkinter as tk
+from tkinter import ttk, messagebox
+import json
+from datetime import datetime
+import os
+import matplotlib.pyplot as plt
+import pandas as pd
+from tkcalendar import Calendar
+
+# Global Constants
+FILE_PATH = 'expenses.json'
+
+# Helper functions to load/save data
+def load_expenses():
+    if os.path.exists(FILE_PATH):
+        with open(FILE_PATH, 'r') as file:
+            return json.load(file)
+    return []
+
+def save_expenses(expenses):
+    with open(FILE_PATH, 'w') as file:
+        json.dump(expenses, file, indent=4)
+
+# Add Expense Function
+def add_expense(expenses, amount, category, date):
+    expense = {
+        'amount': float(amount),
+        'category': category,
+        'date': date
+    }
+    expenses.append(expense)
+    save_expenses(expenses)
+    messagebox.showinfo("Expense Tracker", "Expense Added Successfully")
+
+# Summary Calculation
+def get_summary(expenses, time_frame='overall'):
+    df = pd.DataFrame(expenses)
+    df['date'] = pd.to_datetime(df['date'])
+    
+    if time_frame == 'daily':
+        return df.groupby(df['date'].dt.date)['amount'].sum().to_dict()
+    elif time_frame == 'monthly':
+        return df.groupby(df['date'].dt.to_period('M'))['amount'].sum().to_dict()
+    elif time_frame == 'yearly':
+        return df.groupby(df['date'].dt.year)['amount'].sum().to_dict()
+    else:
+        return df.groupby('category')['amount'].sum().to_dict()
+
+# Data Visualization
+def visualize_expenses(expenses, time_frame='overall'):
+    summary = get_summary(expenses, time_frame)
+    categories = list(summary.keys())
+    amounts = list(summary.values())
+    
+    plt.figure(figsize=(8, 6))
+    plt.bar(categories, amounts, color='cyan')
+    plt.xlabel('Categories/Time Periods', fontsize=12)
+    plt.ylabel('Total Amount Spent', fontsize=12)
+    plt.title(f'Spending Summary ({time_frame.capitalize()})', fontsize=14)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    plt.show()
+
+# GUI Class for the Application
+class ExpenseTrackerApp:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Personal Expense Tracker")
+        self.root.geometry("500x400")
+        self.root.config(bg="#1f1f1f")
+
+        self.expenses = load_expenses()
+
+        # Create UI Elements
+        self.create_menu()
+
+    def create_menu(self):
+        label = tk.Label(self.root, text="Expense Tracker", fg="#ffffff", bg="#1f1f1f", font=("Arial", 24, 'bold'))
+        label.pack(pady=20)
+
+        add_expense_btn = ttk.Button(self.root, text="Add Expense", command=self.open_add_expense)
+        view_summary_btn = ttk.Button(self.root, text="View Summary", command=self.open_summary)
+        visualize_btn = ttk.Button(self.root, text="Visualize Data", command=self.visualize_data)
+        exit_btn = ttk.Button(self.root, text="Exit", command=self.root.quit)
+
+        add_expense_btn.pack(pady=10)
+        view_summary_btn.pack(pady=10)
+        visualize_btn.pack(pady=10)
+        exit_btn.pack(pady=10)
+
+    def open_add_expense(self):
+        add_window = tk.Toplevel(self.root)
+        add_window.title("Add New Expense")
+        add_window.geometry("400x300")
+
+        tk.Label(add_window, text="Amount:", font=("Arial", 12)).pack(pady=5)
+        amount_entry = ttk.Entry(add_window)
+        amount_entry.pack(pady=5)
+
+        tk.Label(add_window, text="Category:", font=("Arial", 12)).pack(pady=5)
+        category_entry = ttk.Combobox(add_window, values=["Food", "Transport", "Entertainment", "Bills", "Other"])
+        category_entry.pack(pady=5)
+
+        tk.Label(add_window, text="Date:", font=("Arial", 12)).pack(pady=5)
+        cal = Calendar(add_window, selectmode='day', year=datetime.now().year, month=datetime.now().month, day=datetime.now().day)
+        cal.pack(pady=5)
+
+        def submit_expense():
+            amount = amount_entry.get()
+            category = category_entry.get()
+            date = cal.get_date()
+            if amount and category:
+                add_expense(self.expenses, amount, category, date)
+                add_window.destroy()
+            else:
+                messagebox.showwarning("Input Error", "Please fill all fields")
+
+        submit_btn = ttk.Button(add_window, text="Submit", command=submit_expense)
+        submit_btn.pack(pady=10)
+
+    def open_summary(self):
+        summary_window = tk.Toplevel(self.root)
+        summary_window.title("Expense Summary")
+        summary_window.geometry("400x400")
+
+        time_frame = ttk.Combobox(summary_window, values=["overall", "daily", "monthly", "yearly"])
+        time_frame.pack(pady=10)
+        time_frame.set("overall")
+
+        def show_summary():
+            frame = time_frame.get()
+            summary = get_summary(self.expenses, frame)
+            summary_text = "\n".join([f"{key}: ${value:.2f}" for key, value in summary.items()])
+            tk.Label(summary_window, text=summary_text, font=("Arial", 12)).pack(pady=10)
+
+        show_btn = ttk.Button(summary_window, text="Show Summary", command=show_summary)
+        show_btn.pack(pady=10)
+
+    def visualize_data(self):
+        visualize_window = tk.Toplevel(self.root)
+        visualize_window.title("Visualize Data")
+        visualize_window.geometry("400x400")
+
+        time_frame = ttk.Combobox(visualize_window, values=["overall", "daily", "monthly", "yearly"])
+        time_frame.pack(pady=10)
+        time_frame.set("overall")
+
+        def generate_visualization():
+            frame = time_frame.get()
+            visualize_expenses(self.expenses, frame)
+
+        visualize_btn = ttk.Button(visualize_window, text="Generate Visualization", command=generate_visualization)
+        visualize_btn.pack(pady=10)
+
+
+# Driver Code
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = ExpenseTrackerApp(root)
+    root.mainloop()
