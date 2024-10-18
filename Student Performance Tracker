@@ -1,0 +1,269 @@
+from flask import Flask, render_template_string, request, redirect, url_for, flash, jsonify
+import numpy as np
+
+app = Flask(__name__)
+app.secret_key = "supersecretkey"
+
+# Model classes for Student and StudentTracker
+
+class Student:
+    def __init__(self, name, roll_number):
+        self.name = name
+        self.roll_number = roll_number
+        self.grades = {}
+        self.co_curricular_skills = {}
+
+    def add_grades(self, **grades):
+        for subject, grade in grades.items():
+            self.grades[subject] = grade
+
+    def add_co_curricular_skills(self, skills):
+        self.co_curricular_skills = skills
+
+    def calculate_average(self):
+        if self.grades:
+            return round(np.mean(list(self.grades.values())), 2)
+        return 0
+
+    def get_details(self):
+        return {
+            'name': self.name,
+            'roll_number': self.roll_number,
+            'grades': self.grades,
+            'average': self.calculate_average(),
+            'co_curricular_skills': self.co_curricular_skills
+        }
+
+class StudentTracker:
+    def __init__(self):
+        self.students = {}
+
+    def add_student(self, name, roll_number, grades, skills):
+        if roll_number not in self.students:
+            student = Student(name, roll_number)
+            student.add_grades(**grades)
+            student.add_co_curricular_skills(skills)
+            self.students[roll_number] = student
+        else:
+            raise ValueError("Student with this roll number already exists")
+
+    def get_student(self, roll_number):
+        return self.students.get(roll_number)
+
+    def get_all_students(self):
+        return [student.get_details() for student in self.students.values()]
+
+tracker = StudentTracker()
+
+# HTML Templates
+index_html = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <title>Student Performance Tracker</title>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1 class="text-primary">Student Performance Tracker</h1>
+        <a href="/add_student" class="btn btn-primary mt-3">Add Student</a>
+        <a href="/visualizations" class="btn btn-info mt-3">Visualizations</a>
+        <hr>
+        <h2>All Students</h2>
+        <ul>
+            {% for student in students %}
+            <li>
+                <a href="/view_student/{{ student['roll_number'] }}">{{ student['name'] }}</a> (Roll Number: {{ student['roll_number'] }})
+                - Average: {{ student['average'] }}%
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</body>
+</html>
+'''
+
+add_student_html = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <title>Add Student</title>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Add Student</h1>
+        <form method="POST">
+            <div class="form-group">
+                <label for="name">Student Name</label>
+                <input type="text" name="name" class="form-control" required>
+            </div>
+            <div class="form-group">
+                <label for="roll_number">Roll Number</label>
+                <input type="text" name="roll_number" class="form-control" required>
+            </div>
+            <h4>Academic Performance:</h4>
+            <div class="form-group">
+                <label for="dwm">DWM Marks</label>
+                <input type="number" name="dwm" class="form-control" min="0" max="100" required>
+            </div>
+            <div class="form-group">
+                <label for="ai">AI Marks</label>
+                <input type="number" name="ai" class="form-control" min="0" max="100" required>
+            </div>
+            <div class="form-group">
+                <label for="ml">ML Marks</label>
+                <input type="number" name="ml" class="form-control" min="0" max="100" required>
+            </div>
+            <div class="form-group">
+                <label for="cs">CS Marks</label>
+                <input type="number" name="cs" class="form-control" min="0" max="100" required>
+            </div>
+            <div class="form-group">
+                <label for="java">Java Marks</label>
+                <input type="number" name="java" class="form-control" min="0" max="100" required>
+            </div>
+            <div class="form-group">
+                <label for="python">Python Marks</label>
+                <input type="number" name="python" class="form-control" min="0" max="100" required>
+            </div>
+            <h4>Co-Curricular Skills:</h4>
+            <div class="form-group">
+                <label for="skills">Describe Co-Curricular Skills</label>
+                <textarea name="skills" class="form-control" required></textarea>
+            </div>
+            <button type="submit" class="btn btn-success">Add Student</button>
+        </form>
+        <a href="/" class="btn btn-secondary mt-3">Back to Home</a>
+    </div>
+</body>
+</html>
+'''
+
+view_student_html = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <title>View Student</title>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>{{ student['name'] }} (Roll Number: {{ student['roll_number'] }})</h1>
+        <h2>Grades:</h2>
+        <ul>
+            {% for subject, grade in student['grades'].items() %}
+            <li>{{ subject }}: {{ grade }}%</li>
+            {% endfor %}
+        </ul>
+        <p><strong>Average Grade:</strong> {{ student['average'] }}%</p>
+        <h2>Co-Curricular Skills:</h2>
+        <p>{{ student['co_curricular_skills'] }}</p>
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+    </div>
+</body>
+</html>
+'''
+
+visualizations_html = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css">
+    <title>Data Visualizations</title>
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>Data Visualizations</h1>
+        <button id="monthly" class="btn btn-info">Show Monthly Data</button>
+        <div id="chart" class="mt-5"></div>
+    </div>
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script>
+        document.getElementById('monthly').onclick = function() {
+            fetch('/data_visualization/monthly')
+                .then(response => response.json())
+                .then(data => {
+                    var trace = {
+                        x: data.x,
+                        y: data.y,
+                        type: 'scatter'
+                    };
+                    var layout = {
+                        title: 'Monthly Performance',
+                        xaxis: { title: 'Month' },
+                        yaxis: { title: 'Score' }
+                    };
+                    Plotly.newPlot('chart', [trace], layout);
+                });
+        };
+    </script>
+</body>
+</html>
+'''
+
+@app.route('/')
+def index():
+    students = tracker.get_all_students()
+    return render_template_string(index_html, students=students)
+
+@app.route('/add_student', methods=['GET', 'POST'])
+def add_student():
+    if request.method == 'POST':
+        name = request.form['name']
+        roll_number = request.form['roll_number']
+        
+        grades = {
+            'DWM': int(request.form['dwm']),
+            'AI': int(request.form['ai']),
+            'ML': int(request.form['ml']),
+            'CS': int(request.form['cs']),
+            'Java': int(request.form['java']),
+            'Python': int(request.form['python'])
+        }
+
+        skills = request.form['skills']
+
+        try:
+            tracker.add_student(name, roll_number, grades, skills)
+            flash('Student added successfully!', 'success')
+            return redirect(url_for('index'))
+        except ValueError as e:
+            flash(str(e), 'danger')
+    return render_template_string(add_student_html)
+
+@app.route('/view_student/<roll_number>')
+def view_student(roll_number):
+    student = tracker.get_student(roll_number)
+    if student:
+        return render_template_string(view_student_html, student=student.get_details())
+    flash("Student not found!", 'danger')
+    return redirect(url_for('index'))
+
+@app.route('/visualizations')
+def visualizations():
+    return render_template_string(visualizations_html)
+
+@app.route('/data_visualization/<frequency>', methods=['GET'])
+def data_visualization(frequency):
+    # Dummy data for monthly performance
+    data = {
+        'x': ['Jan', 'Feb', 'Mar', 'Apr'],
+        'y': [80, 85, 75, 90]
+    }
+
+    if frequency == 'monthly':
+        return jsonify(data)
+    else:
+        return jsonify({"error": "Frequency not supported"}), 400
+
+if __name__ == '__main__':
+    app.run(debug=True)
